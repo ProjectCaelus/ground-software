@@ -1,10 +1,9 @@
 import time
 import heapq
-import socket
 import threading
 from packet import Packet, Log, LogPriority
 from flask_socketio import SocketIO, emit, Namespace
-
+from digi.xbee.devices import XBeeDevice
 
 BYTE_SIZE = 8192
 
@@ -23,29 +22,26 @@ f.close()
 class Handler(Namespace):
     """ Telemetry Class handles all communication """
 
-    def init(self, ip, port, socketio):
+    def init(self, port, baud_rate, remote_id):
         """ Based on given IP and port, create and connect a socket """
         self.queue_send = []
-        self.connect(ip, port)
+        self.device = XBeeDevice(port, baud_rate)
         self.start_time = time.time()
+        self.connect(remote_id)
 
-        self.socketio = socketio
 
     ## telemetry methods
+    def connect(self, remote_id):
+        try:
+            self.device.open()
 
-    def connect(self, ip, port):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        print("IP:", ip, "PORT:", port)
-        self.sock.bind((ip, port))
-        self.sock.listen(1)
-        self.conn, self.addr = self.sock.accept()
-        Log("Created socket")
-        print("finished running connect method")
-
-
-    def init_backend(self, b):
-        self.backend = b
+            self.remote_device = device.get_network().discover_device(remote_id)
+            if remote_device is None:
+                print("Could not find the remote device")
+                
+            self.device.add_data_received_callback(self.ingest)
+        except:
+            print("Error opening XBee device")
 
 
     def begin(self):
@@ -62,36 +58,29 @@ class Handler(Namespace):
 
 
     def send(self):
-        """ Constantly sends next packet from queue to ground station """
+        """ Constantly sends next packet from queue to flight """
         while True:
             if self.queue_send and SEND_ALLOWED:
                 encoded = heapq.heappop(self.queue_send)[1]
-                self.conn.send(encoded)
+                self.device.send_data(self.remote_device, encoded)
+                print("\nSent packet: \n", encoded.decode(), "\n")
+
             time.sleep(DELAY_SEND)
-
-
-    def listen(self):
-        """ Constantly listens for any from ground station """
-        while True:
-            data = self.conn.recv(BYTE_SIZE)
-            if data:
-                self.ingest_thread = threading.Thread(
-                    target=self.ingest, args=(data,))
-                self.ingest_thread.daemon = True
-                self.ingest_thread.start()
-                # time.sleep(DELAY_LISTEN)
 
 
     def enqueue(self, packet):
         """ Encrypts and enqueues the given Packet """
         # TODO: This is implemented wrong. It should enqueue by finding packets that have similar priorities, not changing the priorities of current packets.
+        packet.timestamp = time.time()
+        print("\nEnqueuing packet: \n", packet.to_string(), "\n")
         packet_str = (packet.to_string() + "END").encode()
         heapq.heappush(self.queue_send, (packet.priority, packet_str))
 
 
-    def ingest(self, packet_str):
+    def ingest(self, xbee_message):
         """ Prints any packets received """
 #        print("Ingesting:", packet_str)
+        packet_str = xbee_message.data.decode()
         packet_str = packet_str.decode()
         packet_strs = packet_str.split("END")[:-1]
         packets = [Packet.from_string(p_str) for p_str in packet_strs]
@@ -115,6 +104,8 @@ class Handler(Namespace):
         """ Constantly sends heartbeat message """
         while True:
             log = Log(header="heartbeat", message="AT")
+            log.timestamp = time.time()
+
             self.enqueue(Packet(logs=[log], priority=LogPriority.INFO))
             print("Sent heartbeat")
             time.sleep(DELAY_HEARTBEAT)

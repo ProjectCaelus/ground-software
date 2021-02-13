@@ -9,6 +9,11 @@ import logging
 
 import argparse
 
+# XBEE - ADD TO CONFIG
+GS_PORT = "COM7"
+BAUD_RATE = 9600
+FLIGHT_NODE_ID = "Flight"
+
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
@@ -37,8 +42,8 @@ else:
 
 
 
-GS_IP = config["telemetry"]["GS_IP"]
-GS_PORT = config["telemetry"]["GS_PORT"]
+# GS_IP = config["telemetry"]["GS_IP"]
+# GS_PORT = config["telemetry"]["GS_PORT"]
 
 app = Flask(__name__, static_folder="templates")
 CORS(app)
@@ -50,7 +55,7 @@ if __name__ == "__main__":
     print("listening and sending")
 
     h = Handler('/')
-    h.init(GS_IP, GS_PORT, socketio)
+    h.init(GS_PORT, BAUD_RATE, FLIGHT_NODE_ID)
     h.begin()
 
     socketio.on_namespace(h)
