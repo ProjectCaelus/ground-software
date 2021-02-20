@@ -11,6 +11,7 @@ DELAY = .05
 DELAY_LISTEN = .05
 DELAY_SEND = .05
 DELAY_HEARTBEAT = 3
+NULL = 0
 
 SEND_ALLOWED = True
 
@@ -27,43 +28,47 @@ class Handler(Namespace):
         self.queue_send = []
         self.device = XBeeDevice(port, baud_rate)
         self.start_time = time.time()
-        self.connect(remote_id)
 
-
-    ## telemetry methods
-    def connect(self, remote_id):
         try:
             self.device.open()
 
-            self.remote_device = device.get_network().discover_device(remote_id)
-            if remote_device is None:
-                print("Could not find the remote device")
+            self.remote_device = self.device.get_network().discover_device(remote_id)
+            if self.remote_device is None:
+                print("Could not find FS XBee")
                 
             self.device.add_data_received_callback(self.ingest)
         except:
-            print("Error opening XBee device")
+            print("Error opening GS XBee device")
+            self.device = NULL
+            self.remote_device = NULL
+
+
 
 
     def begin(self):
         """ Starts the send and listen threads """
-        self.send_thread = threading.Thread(target=self.send)
-        self.send_thread.daemon = True
-        self.listen_thread = threading.Thread(target=self.listen)
-        self.listen_thread.daemon = True
-        self.heartbeat_thread = threading.Thread(target=self.heartbeat)
-        self.heartbeat_thread.daemon = True
-        self.send_thread.start()
-        self.listen_thread.start()
-        self.heartbeat_thread.start()
+        if self.remote_device != NULL: 
+            self.send_thread = threading.Thread(target=self.send)
+            self.send_thread.daemon = True
+            self.heartbeat_thread = threading.Thread(target=self.heartbeat)
+            self.heartbeat_thread.daemon = True
+            self.send_thread.start()
+            self.heartbeat_thread.start()
+            print("Running send and heartbeat threads")
 
 
     def send(self):
         """ Constantly sends next packet from queue to flight """
         while True:
             if self.queue_send and SEND_ALLOWED:
-                encoded = heapq.heappop(self.queue_send)[1]
-                self.device.send_data(self.remote_device, encoded)
-                print("\nSent packet: \n", encoded.decode(), "\n")
+                packet_str = heapq.heappop(self.queue_send)[1]
+
+                subpackets = [packet_str[i:100+i] for i in range(0, len(packet_str), 100)]
+                print(subpackets)
+
+                for subpacket in subpackets:
+                    self.device.send_data(self.remote_device, subpacket)
+                    print("\nSent packet:", subpacket, "\n")
 
             time.sleep(DELAY_SEND)
 
@@ -72,16 +77,18 @@ class Handler(Namespace):
         """ Encrypts and enqueues the given Packet """
         # TODO: This is implemented wrong. It should enqueue by finding packets that have similar priorities, not changing the priorities of current packets.
         packet.timestamp = time.time()
-        print("\nEnqueuing packet: \n", packet.to_string(), "\n")
-        packet_str = (packet.to_string() + "END").encode()
+        packet_str = ("^" + packet.to_string() + "END$").encode()
         heapq.heappush(self.queue_send, (packet.priority, packet_str))
 
 
     def ingest(self, xbee_message):
         """ Prints any packets received """
-#        print("Ingesting:", packet_str)
+
         packet_str = xbee_message.data.decode()
-        packet_str = packet_str.decode()
+        # implement subpacket reading
+
+
+        print("Ingesting:", packet_str)
         packet_strs = packet_str.split("END")[:-1]
         packets = [Packet.from_string(p_str) for p_str in packet_strs]
         #packet = Packet.from_string(packet_str)
@@ -105,7 +112,6 @@ class Handler(Namespace):
         while True:
             log = Log(header="heartbeat", message="AT")
             log.timestamp = time.time()
-
             self.enqueue(Packet(logs=[log], priority=LogPriority.INFO))
             print("Sent heartbeat")
             time.sleep(DELAY_HEARTBEAT)
@@ -128,6 +134,6 @@ class Handler(Namespace):
 
 
     def on_button_press(self, data):
-        print(data)
+        print("Button press:", data)
         log = Log(header=data['header'], message=data['message'])
         self.enqueue(Packet(logs=[log], priority=LogPriority.INFO))

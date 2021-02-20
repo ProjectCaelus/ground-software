@@ -1,7 +1,8 @@
 {
   "telemetry": {
-    "GS_IP": "127.0.0.1",
-    "GS_PORT": 5005,
+    "BAUD_RATE": 9600,
+    "GS_PORT": "COM7",
+    "FLIGHT_NODE_ID": "Flight",
     "DELAY": 0.1,
     "SOCKETIO_HOST": "127.0.0.1",
     "SOCKETIO_PORT": 5000
