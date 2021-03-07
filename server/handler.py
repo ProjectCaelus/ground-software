@@ -109,16 +109,20 @@ class Handler(Namespace):
         while self.running:
             rcvd = ser.read(ser.in_waiting).decode()
             self.rcvd_data.append(rcvd)
-            if '^' in data:
-                for elem in data.split("^"): 
-                    self.ingest_queue.put(elem)
+            if '$' in data:
+                i = data.find("$")      # end of packet char
+                packet = data[:i]
+                self.ingest_queue.put(packet)
+
+                data = data[i+1:]
+                    
             time.sleep(0.01)
 
 
     def enqueue(self, packet):
         """ Encrypts and enqueues the given Packet """
         # TODO: This is implemented wrong. It should enqueue by finding packets that have similar priorities, not changing the priorities of current packets.
-        packet_str = ("^" + packet.to_string()).encode()
+        packet_str = (packet.to_string() + "$").encode()
         heapq.heappush(self.queue_send, (packet.priority, packet_str))
 
     
